@@ -1,6 +1,7 @@
 //check if action / actor has a session
+import express from 'express'
 import cookieParser from "cookie-parser";
-import express, { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
 const app = express()
 app.use(cookieParser())
 

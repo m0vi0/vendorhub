@@ -1,16 +1,18 @@
-/// <reference path="./src/types/express.d.ts" />
-import express, { type Request, type Response, type NextFunction } from 'express'
+/// <reference path="./types/express.d.ts" />
+import express from 'express'
+import type { Request, Response, NextFunction } from 'express'
 import * as crypto from 'crypto'
 import cookieParser from 'cookie-parser'
 import bcrypt from 'bcrypt'
-import { db } from './db.js'
+import { db } from '../db.js'
 import { error } from 'console'
-import sessioncheck from './middleware/sessioncheck.js'
+import sessioncheck from '../middleware/sessioncheck.js'
+import { userInfo } from 'os'
 
 const app = express()
 const PORT = 1738;
 
-const SECRET = 'cheater'
+const SECRET = 'vendorhub'
 
 const saltRounds = 10;
 
@@ -38,7 +40,7 @@ interface AppSession {
 app.set('view engine', 'ejs')
 
 app.use((req, res, next) => {
-  console.log('request body', req);
+  console.log('LOGS:');
   next();
 });
 
@@ -46,7 +48,7 @@ app.get('/', (req, res, next) => res.send('homepage'))
 
 app.get('/logout', sessioncheck, (req, res, next) => {
   const sessionId = req.cookies?.session_id
-  db.exec(`DELETE * FROM sessions WHERE id=?`).run(sessionId)
+  db.prepare(`DELETE * FROM sessions WHERE id=?`).run(sessionId)
   res.clearCookie("session_id")
   res.redirect('/')
 })
@@ -56,7 +58,9 @@ app.post('/', (req, res) => {
   if (userId === undefined) {
     return res.send('error becasue userid undefined')
   }
-  const userinfo: UserInfo = db.prepare(`SELECT * FROM users WHERE id=?`).get(userId)
+  const userinfo = db.prepare(`SELECT * FROM users WHERE id=?`).get(userId) as UserInfo | undefined
+  if (!userinfo) return res.status(401)
+
   if (userId && userinfo) {
     if (userinfo.role === 'client') return res.redirect(`/users/${userId}/client`)
     if (userinfo.role === 'vendor') return res.redirect(`/users/${userId}/vendor`)
@@ -87,12 +91,12 @@ app.post('/signup', async (req, res) => {
   try {
     const row = db.prepare(`
       INSERT INTO users (email,hash,role) VALUES (?,?,?) RETURNING id,email,role;
-      `).get(req.body.email, hash, req.body.role)
+      `).get(req.body.email, hash, req.body.role) as UserInfo
     if (!row) {
       return res.status(404)
     }
-    const user: UserInfo = row
-    check_user(user)
+  
+    check_user(row)
 
     const session: AppSession = {
       id: crypto.randomUUID(),
@@ -107,7 +111,7 @@ app.post('/signup', async (req, res) => {
       secure: false,
       sameSite: 'lax'
     })
-    if (user === undefined) {
+    if (row === undefined) {
       return res.status(500)
     }
     try {
@@ -115,8 +119,8 @@ app.post('/signup', async (req, res) => {
     } catch (error) {
       console.log(error)
     }
-    if (user.role === 'client') return res.redirect(`/users/${session.userId}/client`)
-    if (user.role === 'vendor') return res.redirect(`/users/${session.userId}/vendor`)
+    if (row.role === 'client') return res.redirect(`/users/${session.userId}/client`)
+    if (row.role === 'vendor') return res.redirect(`/users/${session.userId}/vendor`)
     res.redirect('/')
   } catch (err: unknown) {
     const error = err as SqliteError
